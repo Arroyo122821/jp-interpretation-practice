@@ -526,7 +526,7 @@ function loadResults(){
 
 async function loadResultsFromServer(){
   const cloud = await jbLoad();
-  if(cloud!==null) return cloud;
+  if(cloud!==null && cloud.length>=0) return cloud;
   return loadResults();
 }
 
@@ -601,8 +601,7 @@ document.getElementById('loginName').addEventListener('keydown',e=>{if(e.key==='
 let selectedTrainee = null;
 
 function renderAdmin(){
-  if(_useServer){ renderAdminAsync(); return; }
-  renderAdminWithData(loadResults());
+  renderAdminAsync();
 }
 
 function renderAdminWithData(results){
@@ -650,7 +649,7 @@ async function openTrainee(name){
   hide('traineeSelectView',true);
   hide('traineeDetailView',false);
   document.getElementById('traineeDetailTitle').textContent=name;
-  const allResults = _useServer ? await loadResultsFromServer() : loadResults();
+  const allResults = await loadResultsFromServer();
   const results=allResults.filter(r=>r.name===name);
   const scored=results.filter(r=>r.score!==null);
   const avg=scored.length?Math.round(scored.reduce((a,b)=>a+b.score,0)/scored.length):null;
@@ -688,7 +687,7 @@ function clearTraineeResults(){
 }
 
 async function exportCSV(){
-  const results = _useServer ? await loadResultsFromServer() : loadResults();
+  const results = await loadResultsFromServer();
   if(!results.length){alert('No results to export.');return;}
   const rows=[['Name','Scenario','Sentence','Score','Their rendering','Model rendering','Date/Time']];
   results.forEach(r=>rows.push([r.name,r.scenario,'"'+r.sentence+'"',r.score===null?'Skip':r.score,'"'+(r.rendering||'')+'"','"'+r.model+'"',r.datetime]));
@@ -1186,7 +1185,7 @@ function doAdminLogin(){
 }
 
 async function renderAdminAsync(){
-  const results = _useServer ? await loadResultsFromServer() : loadResults();
+  const results = await loadResultsFromServer();
   renderAdminWithData(results);
 }
 </script>
