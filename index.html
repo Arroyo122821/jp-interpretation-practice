@@ -490,26 +490,34 @@ async function checkServer(){
 const _jbHeaders = {
   'Content-Type': 'application/json',
   'X-Master-Key': JSONBIN_KEY,
-  'X-Bin-Versioning': 'false'
+  'X-Bin-Versioning': 'false',
+  'X-Bin-Private': 'false'
 };
 
 async function jbLoad(){
   try{
-    const r = await fetch(JSONBIN_URL+'/latest', {headers:{'X-Master-Key':JSONBIN_KEY}});
-    if(r.ok){ const d=await r.json(); return d.record.results||[]; }
-  }catch(e){}
+    const r = await fetch(JSONBIN_URL+'/latest', {
+      headers:{'X-Master-Key':JSONBIN_KEY,'X-Bin-Versioning':'false'}
+    });
+    if(r.ok){
+      const d=await r.json();
+      return d.record&&d.record.results?d.record.results:[];
+    }
+    console.log('[JSONBin] Load failed:',r.status,await r.text());
+  }catch(e){console.log('[JSONBin] Load error:',e);}
   return null;
 }
 
 async function jbSave(results){
   try{
-    await fetch(JSONBIN_URL, {
+    const r = await fetch(JSONBIN_URL, {
       method:'PUT',
       headers:_jbHeaders,
       body:JSON.stringify({results})
     });
-    return true;
-  }catch(e){ return false; }
+    if(!r.ok) console.log('[JSONBin] Save failed:',r.status,await r.text());
+    return r.ok;
+  }catch(e){console.log('[JSONBin] Save error:',e);return false;}
 }
 
 function loadResults(){
