@@ -306,7 +306,7 @@ tr:hover td{background:#fafaf8}
           <button id="btnSkip" disabled>Skip</button>
         </div>
         <div class="score-section" id="scoreSection">
-          <div class="score-row"><span class="score-big" id="scoreNum">—</span><span class="score-ten">/10</span><span class="score-comment" id="scoreComment"></span></div>
+          <div class="score-row"><span class="score-big" id="scoreNum">—</span><span class="score-ten" id="scoreTen"></span><span class="score-comment" id="scoreComment"></span></div>
           <div id="feedbackList"></div>
         </div>
       </div>
@@ -638,9 +638,9 @@ function renderAdminWithData(results){
   const stats=document.getElementById('statsRow');
   stats.innerHTML=`
     <div class="stat-card"><div class="stat-label">Total entries</div><div class="stat-val">${results.length}</div><div class="stat-sub">sentences recorded</div></div>
-    <div class="stat-card"><div class="stat-label">Overall average</div><div class="stat-val">${scored.length?avg+'/10':'—'}</div><div class="stat-sub">across all trainees</div></div>
+    <div class="stat-card"><div class="stat-label">Overall average</div><div class="stat-val">${scored.length?avg+'/3':'—'}</div><div class="stat-sub">across all trainees</div></div>
     <div class="stat-card"><div class="stat-label">Trainees</div><div class="stat-val">${users.length}</div><div class="stat-sub">${users.length?'active':'none yet'}</div></div>
-    <div class="stat-card"><div class="stat-label">Top score</div><div class="stat-val">${scored.length?Math.max(...scored.map(r=>r.score))+'/10':'—'}</div><div class="stat-sub">best single sentence</div></div>`;
+    <div class="stat-card"><div class="stat-label">Top score</div><div class="stat-val">${scored.length?Math.max(...scored.map(r=>r.score))+'/3':'—'}</div><div class="stat-sub">best single sentence</div></div>`;
   renderTraineeGrid(users, results);
 }
 
@@ -652,7 +652,7 @@ function renderTraineeGrid(users, results){
     const userResults=results.filter(r=>r.name===name);
     const scored=userResults.filter(r=>r.score!==null);
     const avg=scored.length?Math.round(scored.reduce((a,b)=>a+b.score,0)/scored.length):null;
-    const cls=avg===null?'s-skip':avg>=8?'s-high':avg>=5?'s-mid':'s-low';
+    const cls=avg===null?'s-skip':avg>=2.5?'s-high':avg>=1.5?'s-mid':avg>=0.5?'s-low':'s-skip';
     const initials=name.split('.').map(p=>p[0].toUpperCase()).join('');
     const lastActive=userResults[userResults.length-1]?.datetime||'—';
     const card=document.createElement('div');
@@ -662,8 +662,8 @@ function renderTraineeGrid(users, results){
       <div class="trainee-initials">${initials}</div>
       <div class="trainee-name">${name}</div>
       <div class="trainee-meta">${userResults.length} sentences · Last: ${lastActive.split(',')[0]}</div>
-      <span class="score-pill trainee-score-badge ${cls}">${avg!==null?'Avg '+avg+'/10':'No scores yet'}</span>
-      <div class="progress-ring"><div class="ring-bar"><div class="ring-fill" style="width:${avg!==null?avg*10:0}%"></div></div></div>`;
+      <span class="score-pill trainee-score-badge ${cls}">${avg!==null?'Avg '+avg+'/3':'No scores yet'}</span>
+      <div class="progress-ring"><div class="ring-bar"><div class="ring-fill" style="width:${avg!==null?(avg/3)*100:0}%"></div></div></div>`;
     grid.appendChild(card);
   });
 }
@@ -681,15 +681,15 @@ async function openTrainee(name){
   const scenarios=[...new Set(results.map(r=>r.scenario))];
   document.getElementById('traineeStatsRow').innerHTML=`
     <div class="stat-card"><div class="stat-label">Sentences</div><div class="stat-val">${results.length}</div><div class="stat-sub">total attempts</div></div>
-    <div class="stat-card"><div class="stat-label">Average score</div><div class="stat-val">${avg!==null?avg+'/10':'—'}</div><div class="stat-sub">scored sentences</div></div>
-    <div class="stat-card"><div class="stat-label">Best score</div><div class="stat-val">${best!==null?best+'/10':'—'}</div><div class="stat-sub">single sentence</div></div>
+    <div class="stat-card"><div class="stat-label">Average score</div><div class="stat-val">${avg!==null?avg+'/3':'—'}</div><div class="stat-sub">scored sentences</div></div>
+    <div class="stat-card"><div class="stat-label">Best score</div><div class="stat-val">${best!==null?best+'/3':'—'}</div><div class="stat-sub">single sentence</div></div>
     <div class="stat-card"><div class="stat-label">Scenarios tried</div><div class="stat-val">${scenarios.length}</div><div class="stat-sub">${scenarios.map(s=>s.split('·')[0].trim()).join(', ')}</div></div>`;
   const tbody=document.getElementById('traineeResultsBody');
   tbody.innerHTML='';
   results.slice().reverse().forEach(r=>{
     const sc=r.score;
-    const cls=sc===null?'s-skip':sc>=8?'s-high':sc>=5?'s-mid':'s-low';
-    const label=sc===null?'Skip':sc+'/10';
+    const cls=sc===null?'s-skip':sc===3?'s-high':sc===2?'s-mid':sc===1?'s-low':'s-skip';
+    const label=sc===null?'Skip':sc+'/3';
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${r.scenario}</td><td style="max-width:180px;word-break:break-word">${r.sentence}</td><td><span class="score-pill ${cls}">${label}</span></td><td style="max-width:180px;word-break:break-word;font-style:italic;color:#5f5e5a">${r.rendering||'—'}</td><td style="max-width:180px;word-break:break-word;color:#92400e">${r.model}</td><td style="white-space:nowrap;color:#888780">${r.datetime}</td>`;
     tbody.appendChild(tr);
@@ -842,20 +842,42 @@ async function revealAndScore(){
   const isCustom=cur===-1&&window._customTopic;
   const s=isCustom?null:scenarios[cur];
   const sent=isCustom?null:(s?s.sentences[sentIdx]:null);
-  const u=(spokenText||'').toLowerCase();
-  let sc=5;const hits=[],misses=[];
-  if(!isCustom&&s&&s.terms){
-    s.terms.forEach(([en,jp])=>{
-      if(sent&&sent.jp&&sent.jp.includes(jp)){
-        if(u.includes(en.toLowerCase().split(' ')[0])){hits.push(en);sc+=0.8;}
-        else{misses.push(en+' ('+jp+')');sc-=0.5;}
+
+  // Scoring: 3=perfect, 2=same meaning, 1=has answer but far, 0=no answer
+  const comments={3:"Perfect",2:"Good — same meaning",1:"Partial — keep practicing",0:"No answer"};
+  const hits=[],misses=[];
+  let sc=0;
+
+  if(!spokenText||!spokenText.trim()){
+    sc=0;
+  } else {
+    sc=1; // has an answer
+    // Get model for comparison
+    const modelForScore=(isCustom&&window._customTopic&&window._customTopic.models)?window._customTopic.models[sentIdx]:(sent?sent.model:'');
+    const u=spokenText.toLowerCase().trim();
+    const m=(modelForScore||'').toLowerCase().trim();
+    if(m){
+      // Check word overlap
+      const uWords=new Set(u.split(/\s+/).filter(w=>w.length>3));
+      const mWords=m.split(/\s+/).filter(w=>w.length>3);
+      const matched=mWords.filter(w=>uWords.has(w));
+      const overlap=mWords.length>0?matched.length/mWords.length:0;
+      if(overlap>=0.7) sc=3; // 70%+ words match = perfect
+      else if(overlap>=0.35) sc=2; // 35-70% = same meaning
+      else sc=1; // has answer but far
+      // Track key terms
+      if(!isCustom&&s&&s.terms){
+        s.terms.forEach(([en,jp])=>{
+          const src=sent&&sent.jp?sent.jp:u;
+          if(src.includes(jp)||m.includes(en.toLowerCase())){
+            if(u.includes(en.toLowerCase().split(' ')[0])){hits.push(en);}
+            else{misses.push(en);}
+          }
+        });
       }
-    });
+    }
   }
-  if(spokenText.trim().split(/\s+/).length>8)sc+=1;
-  sc=Math.min(10,Math.max(1,Math.round(sc)));
   if(spokenText){totalScore+=sc;scoredCount++;}
-  const comments={10:"Flawless",9:"Near-perfect",8:"Strong",7:"Good",6:"Acceptable",5:"Developing",4:"Needs work",3:"Keep practicing",2:"Review model",1:"Try again"};
   if(spokenText){const yb=document.getElementById('your-'+sentIdx);yb.textContent='"'+spokenText+'"';yb.classList.add('show');}
   const modelText = (cur===-1&&window._customTopic&&window._customTopic.models)?window._customTopic.models[sentIdx]:(sent?sent.model:'');
   document.getElementById('modeltext-'+sentIdx).textContent=modelText||'';
@@ -864,6 +886,7 @@ async function revealAndScore(){
   document.getElementById('scoreSection').style.display='block';
   document.getElementById('scoreNum').textContent=spokenText?sc:'—';
   document.getElementById('scoreComment').textContent=spokenText?(comments[sc]||''):'Skipped';
+  document.getElementById('scoreTen').textContent=spokenText?'/3':'';
   const fl=document.getElementById('feedbackList');fl.innerHTML='';
   hits.forEach(h=>{const d=document.createElement('div');d.className='fb-item hit';d.textContent='✓ '+h;fl.appendChild(d);});
   misses.forEach(m=>{const d=document.createElement('div');d.className='fb-item miss';d.textContent='△ '+m;fl.appendChild(d);});
@@ -970,7 +993,7 @@ document.getElementById('btnNext').onclick=function(){
 function endSession(){
   document.getElementById('progressFill').style.width='100%';
   const avg=scoredCount>0?Math.round(totalScore/scoredCount):0;
-  document.getElementById('sessionBar').innerHTML='<strong>Session complete!</strong> '+scenarios[cur].sentences.length+' sentences &nbsp;|&nbsp; Average: '+(scoredCount>0?avg+'/10':'n/a')+' &nbsp;|&nbsp; <button onclick="startScenario(cur)" style="font-size:12px;padding:3px 10px">Try again</button> &nbsp;<button onclick="showTopicSelect()" style="font-size:12px;padding:3px 10px">&#8592; Choose another topic</button>';
+  document.getElementById('sessionBar').innerHTML='<strong>Session complete!</strong> '+scenarios[cur].sentences.length+' sentences &nbsp;|&nbsp; Average: '+(scoredCount>0?avg+'/3':'n/a')+' &nbsp;|&nbsp; <button onclick="startScenario(cur)" style="font-size:12px;padding:3px 10px">Try again</button> &nbsp;<button onclick="showTopicSelect()" style="font-size:12px;padding:3px 10px">&#8592; Choose another topic</button>';
   setStep(3);document.getElementById('btnNext').disabled=true;
 }
 
@@ -1193,7 +1216,10 @@ function loadCustomTopic(topic){
   });
 
   window._customTopic=topic;
-  updateProgress();setStep(1);
+  updateProgress();
+  setStep(1);
+  document.getElementById('btnPlay').disabled=false;
+  document.getElementById('btnSkip').disabled=false;
 }
 
 /* Override doAdminLogin to also init admin view state */
