@@ -217,6 +217,39 @@ tr:hover td{background:#fafaf8}
   </div>
 </div>
 
+<!-- MY SCORES SCREEN -->
+<div id="myScoresScreen" class="hidden">
+  <div class="app">
+    <div class="nav">
+      <div class="nav-left">
+        <div class="nav-title">🎙 JP Interpretation Practice</div>
+        <div class="nav-user" id="myScoresNavUser"></div>
+      </div>
+      <div class="nav-right">
+        <button class="nav-btn" onclick="hideMyScores()">&#8592; Back</button>
+        <button class="nav-btn" onclick="doLogout()">Sign out</button>
+      </div>
+    </div>
+    <div style="background:#fff;border:1px solid #d3d1c7;border-radius:12px;overflow:hidden;margin-top:8px">
+      <div style="padding:14px 16px;border-bottom:1px solid #f1efe8;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-size:14px;font-weight:600;color:#1a1a18">My Scores</div>
+          <div style="font-size:12px;color:#888780;margin-top:2px">Scores are reviewed and assigned by your trainer</div>
+        </div>
+        <div id="myScoresSummary" style="font-size:12px;color:#5f5e5a"></div>
+      </div>
+      <div id="myScoresLoading" style="padding:32px;text-align:center;color:#888780;font-size:13px">Loading your results…</div>
+      <div id="myScoresEmpty" class="hidden" style="padding:32px;text-align:center;color:#888780;font-size:13px">No submissions yet. Complete a practice session first!</div>
+      <div class="table-wrap hidden" id="myScoresTableWrap">
+        <table>
+          <thead><tr><th>Scenario</th><th>Sentence</th><th>Your Answer</th><th>Model Answer</th><th>Score</th><th>Date / Time</th></tr></thead>
+          <tbody id="myScoresBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ADMIN LOGIN -->
 <div id="adminLoginScreen" class="hidden">
   <div class="login-card" style="max-width:340px;margin:60px auto">
@@ -240,6 +273,7 @@ tr:hover td{background:#fafaf8}
       </div>
       <div class="nav-right">
         <button class="nav-btn" id="btnChangeTopic" onclick="showTopicSelect()" style="display:none">&#8592; Topics</button>
+        <button class="nav-btn" onclick="showMyScores()">My Scores</button>
         <button class="nav-btn" onclick="doLogout()">Sign out</button>
       </div>
     </div>
@@ -350,7 +384,11 @@ tr:hover td{background:#fafaf8}
             <button class="back-btn" onclick="backToTrainees()">&#8592; All trainees</button>
             <div class="admin-card-title" id="traineeDetailTitle"></div>
           </div>
-          <button class="clear-btn" onclick="clearTraineeResults()">Clear this trainee</button>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span id="publishStatus" style="font-size:11px;color:#888780;font-style:italic"></span>
+            <button class="nav-btn" style="background:#1a1a18;color:#fff;border-color:#1a1a18;font-weight:600" onclick="publishScores()">&#10003; Publish Scores</button>
+            <button class="clear-btn" onclick="clearTraineeResults()">Clear this trainee</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
@@ -525,7 +563,7 @@ async function jbLoad(){
     });
     if(r.ok){
       const d=await r.json();
-      return d.record&&d.record.results?d.record.results:[];
+      return d.record||{};
     }
     console.log('[JSONBin] Load failed:',r.status,await r.text());
   }catch(e){console.log('[JSONBin] Load error:',e);}
@@ -534,10 +572,13 @@ async function jbLoad(){
 
 async function jbSave(results){
   try{
+    // Load full bin first to preserve topics + published
+    const bin = await jbLoad() || {};
+    bin.results = results;
     const r = await fetch(JSONBIN_URL, {
       method:'PUT',
       headers:_jbHeaders,
-      body:JSON.stringify({results})
+      body:JSON.stringify(bin)
     });
     if(!r.ok) console.log('[JSONBin] Save failed:',r.status,await r.text());
     return r.ok;
@@ -549,8 +590,8 @@ function loadResults(){
 }
 
 async function loadResultsFromServer(){
-  const cloud = await jbLoad();
-  if(cloud!==null && cloud.length>=0) return cloud;
+  const bin = await jbLoad();
+  if(bin!==null) return bin.results||[];
   return loadResults();
 }
 
@@ -561,8 +602,8 @@ async function saveResult(rec){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(local));
   // Save to JSONBin cloud
   try{
-    const cloud = await jbLoad();
-    const data = cloud!==null ? cloud : local;
+    const bin = await jbLoad();
+    const data = bin!==null ? (bin.results||[]) : local;
     if(!data.find(r=>r.datetime===rec.datetime&&r.name===rec.name&&r.sentence===rec.sentence)){
       data.push(rec);
     }
@@ -578,9 +619,9 @@ async function clearResults(){
 }
 
 function clearTraineeFromServer(name){
-  jbLoad().then(cloud=>{
-    if(cloud===null)return;
-    const filtered=cloud.filter(r=>r.name!==name);
+  jbLoad().then(bin=>{
+    if(bin===null)return;
+    const filtered=(bin.results||[]).filter(r=>r.name!==name);
     jbSave(filtered);
   });
 }
@@ -673,7 +714,11 @@ async function openTrainee(name){
   hide('traineeSelectView',true);
   hide('traineeDetailView',false);
   document.getElementById('traineeDetailTitle').textContent=name;
-  const allResults = await loadResultsFromServer();
+  document.getElementById('publishStatus').textContent='';
+  const bin = await jbLoad()||{};
+  const pub=bin.published||{};
+  if(pub[name]) document.getElementById('publishStatus').textContent='Published '+pub[name];
+  const allResults = bin.results||[];
   const results=allResults.filter(r=>r.name===name);
   const scored=results.filter(r=>r.score!==null);
   const avg=scored.length?Math.round(scored.reduce((a,b)=>a+b.score,0)/scored.length):null;
@@ -732,7 +777,6 @@ async function adminSetScore(idx, val){
   const ok = await jbSave(allResults);
   if(ok){
     showToast('Score saved ✓');
-    renderTraineeDetail(selectedTrainee);
   } else {
     showToast('Failed to save score','#c0392b');
   }
@@ -1009,28 +1053,20 @@ const TOPICS_KEY='jp_practice_custom_topics';
 
 // Load topics from JSONBin cloud
 async function jbLoadTopics(){
-  try{
-    const r=await fetch(JSONBIN_URL+'/latest',{headers:{'X-Master-Key':JSONBIN_KEY,'X-Bin-Versioning':'false'}});
-    if(r.ok){const d=await r.json();return d.record&&d.record.topics?d.record.topics:null;}
-  }catch(e){}
-  return null;
+  const bin = await jbLoad();
+  return bin&&bin.topics?bin.topics:null;
 }
 
 // Save topics to JSONBin cloud
 async function jbSaveTopics(topics){
   try{
-    // Load current bin data first
-    const r=await fetch(JSONBIN_URL+'/latest',{headers:{'X-Master-Key':JSONBIN_KEY,'X-Bin-Versioning':'false'}});
-    if(r.ok){
-      const d=await r.json();
-      const current=d.record||{};
-      current.topics=topics;
-      await fetch(JSONBIN_URL,{
-        method:'PUT',
-        headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Bin-Versioning':'false'},
-        body:JSON.stringify(current)
-      });
-    }
+    const bin = await jbLoad() || {};
+    bin.topics = topics;
+    await fetch(JSONBIN_URL,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Bin-Versioning':'false'},
+      body:JSON.stringify(bin)
+    });
   }catch(e){console.log('[JSONBin] Topics save error:',e);}
 }
 
@@ -1291,6 +1327,87 @@ function doAdminLogin(){
   } else {
     document.getElementById('adminErr').style.display='block';
   }
+}
+
+async function showMyScores(){
+  document.getElementById('practiceScreen').classList.add('hidden');
+  document.getElementById('myScoresScreen').classList.remove('hidden');
+  document.getElementById('myScoresNavUser').textContent=currentUser;
+  document.getElementById('myScoresLoading').classList.remove('hidden');
+  document.getElementById('myScoresEmpty').classList.add('hidden');
+  document.getElementById('myScoresTableWrap').classList.add('hidden');
+
+  // Load full bin to check published flag and results
+  let allResults=[], isPublished=false;
+  try{
+    const bin = await jbLoad();
+    if(bin){
+      allResults=bin.results||[];
+      const pub=bin.published||{};
+      isPublished=!!pub[currentUser];
+    }
+  }catch(e){allResults=await loadResultsFromServer();}
+
+  const myResults=allResults.filter(r=>r.name===currentUser);
+  document.getElementById('myScoresLoading').classList.add('hidden');
+
+  if(!myResults.length){
+    document.getElementById('myScoresEmpty').classList.remove('hidden');
+    return;
+  }
+
+  // If not published, show pending message
+  if(!isPublished){
+    document.getElementById('myScoresSummary').innerHTML='';
+    document.getElementById('myScoresEmpty').textContent='Your trainer hasn\'t released your scores yet. Please check back later.';
+    document.getElementById('myScoresEmpty').classList.remove('hidden');
+    return;
+  }
+
+  const scored=myResults.filter(r=>r.score!==null);
+  const avg=scored.length?Math.round(scored.reduce((a,b)=>a+b.score,0)/scored.length):null;
+  document.getElementById('myScoresSummary').innerHTML=
+    `<span style="font-weight:600">${myResults.length}</span> submissions &nbsp;·&nbsp; `+
+    `<span style="font-weight:600">${scored.length}</span> scored &nbsp;·&nbsp; `+
+    `Avg: <span style="font-weight:600;color:#378add">${avg!==null?avg+'/3':'—'}</span>`;
+
+  const tbody=document.getElementById('myScoresBody');
+  tbody.innerHTML='';
+  myResults.slice().reverse().forEach(r=>{
+    const sc=r.score;
+    const cls=sc===null?'s-skip':sc===3?'s-high':sc===2?'s-mid':sc===1?'s-low':'s-skip';
+    const label=sc===null?'<span style="color:#888780;font-style:italic">Pending</span>':
+      `<span class="score-pill ${cls}">${sc}/3 — ${sc===3?'Perfect':sc===2?'Same meaning':sc===1?'Partial':'No answer'}</span>`;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${r.scenario}</td>
+      <td style="max-width:160px;word-break:break-word">${r.sentence}</td>
+      <td style="max-width:160px;word-break:break-word;font-style:italic;color:#5f5e5a">${r.rendering||'—'}</td>
+      <td style="max-width:160px;word-break:break-word;color:#92400e">${r.model||'—'}</td>
+      <td>${label}</td>
+      <td style="white-space:nowrap;color:#888780">${r.datetime}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('myScoresTableWrap').classList.remove('hidden');
+}
+
+function hideMyScores(){
+  document.getElementById('myScoresScreen').classList.add('hidden');
+  document.getElementById('practiceScreen').classList.remove('hidden');
+}
+
+async function publishScores(){
+  if(!confirm('Publish all scores for '+selectedTrainee+'? They will be able to see their scores immediately.'))return;
+  try{
+    const bin = await jbLoad() || {};
+    if(!bin.published) bin.published={};
+    bin.published[selectedTrainee]=new Date().toLocaleString('en-PH',{timeZone:'Asia/Manila',hour12:false});
+    const r=await fetch(JSONBIN_URL,{method:'PUT',headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Bin-Versioning':'false'},body:JSON.stringify(bin)});
+    if(r.ok){
+      showToast('Scores published for '+selectedTrainee+' ✓');
+      document.getElementById('publishStatus').textContent='Published '+bin.published[selectedTrainee];
+    } else showToast('Publish failed','#c0392b');
+  }catch(e){showToast('Publish failed','#c0392b');}
 }
 
 async function renderAdminAsync(){
