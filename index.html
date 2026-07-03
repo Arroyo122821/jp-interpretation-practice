@@ -913,14 +913,9 @@ function startRec(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){ta.textContent='Not supported. Use the Type option instead.';return;}
 
-  // ── Start real audio capture via MediaRecorder ──
   audioChunks=[];lastAudioURL=null;
-  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
-    mediaRecorder=new MediaRecorder(stream);
-    mediaRecorder.ondataavailable=e=>{if(e.data.size>0)audioChunks.push(e.data);};
-    mediaRecorder.start();
-  }).catch(()=>{mediaRecorder=null;}); // mic blocked — still continue with speech recognition
 
+  // Start Speech Recognition first (it manages the mic)
   recognition=new SR();
   const recLang=(window._customTopic&&window._customTopic.lang==='en')?'ja-JP':'en-US';
   recognition.lang=recLang;
@@ -961,12 +956,11 @@ function startRec(){
     document.getElementById('btnStop').disabled=true;
     document.getElementById('btnRecord').disabled=false;
 
-    // ── Stop MediaRecorder and upload audio ──
+    // Stop MediaRecorder if running, then upload
     if(mediaRecorder&&mediaRecorder.state!=='inactive'){
       mediaRecorder.onstop=async()=>{
         const blob=new Blob(audioChunks,{type:'audio/webm'});
         lastAudioURL=await uploadAudioToCloudinary(blob);
-        // Stop all tracks to release mic
         mediaRecorder.stream.getTracks().forEach(t=>t.stop());
         if(spokenText&&spokenText.trim().length>0){
           ta.textContent=spokenText;
@@ -977,6 +971,7 @@ function startRec(){
       };
       mediaRecorder.stop();
     } else {
+      // MediaRecorder unavailable — still submit transcript if we have it
       if(spokenText&&spokenText.trim().length>0){
         ta.textContent=spokenText;
         revealAndScore();
@@ -986,7 +981,18 @@ function startRec(){
     }
   };
 
-  try{recognition.start();}catch(e){ta.textContent='Could not start. Use the Type option.';}
+  // Start speech recognition
+  try{
+    recognition.start();
+    // Try to attach MediaRecorder separately (non-blocking)
+    navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+      try{
+        mediaRecorder=new MediaRecorder(stream);
+        mediaRecorder.ondataavailable=e=>{if(e.data.size>0)audioChunks.push(e.data);};
+        mediaRecorder.start(100); // collect data every 100ms
+      }catch(e){mediaRecorder=null;}
+    }).catch(()=>{mediaRecorder=null;});
+  }catch(e){ta.textContent='Could not start. Use the Type option.';}
 }
 
 async function revealAndScore(){
